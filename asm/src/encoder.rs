@@ -105,6 +105,36 @@ impl Encoder {
             }
             seen.push(&slot.dst);
         }
+
+        // V2-V5: detect multiple triggers per functional unit.
+        let mut alu_triggers = 0;
+        let mut lsu_triggers = 0;
+        let mut mul_triggers = 0;
+        let mut gcu_triggers = 0;
+        for slot in &cycle.slots {
+            use Destination::*;
+            match slot.dst {
+                AluAddT | AluSubT | AluAndT | AluOrT | AluXorT
+                | AluShlT | AluShrT | AluSshrT
+                | AluEqT  | AluNeT  | AluLtT  | AluLeT  | AluGtT | AluGeT => alu_triggers += 1,
+                LsuLdT | LsuStT => lsu_triggers += 1,
+                MulT => mul_triggers += 1,
+                GcuJmpT => gcu_triggers += 1,
+                _ => {}
+            }
+        }
+        if alu_triggers > 1 {
+            self.diags.error(cycle.span.clone(), "more than one ALU trigger in a single cycle");
+        }
+        if lsu_triggers > 1 {
+            self.diags.error(cycle.span.clone(), "more than one LSU trigger in a single cycle");
+        }
+        if mul_triggers > 1 {
+            self.diags.error(cycle.span.clone(), "more than one MUL trigger in a single cycle");
+        }
+        if gcu_triggers > 1 {
+            self.diags.error(cycle.span.clone(), "more than one GCU jump in a single cycle");
+        }
     }
 
     fn encode_slot(&mut self, addr: u16, idx: usize, spec: &SlotSpec) -> Slot {
@@ -259,5 +289,24 @@ mod tests {
     fn rejects_duplicate_destination() {
         let result = pipeline("r0 -> r3; r1 -> r3\n");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_two_alu_triggers() {
+        let result = pipeline("r0 -> ALU_ADD_T; r1 -> ALU_SUB_T\n");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_two_lsu_triggers() {
+        let result = pipeline("r0 -> LSU_LD_T; r1 -> LSU_ST_T\n");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn allows_one_trigger_each_fu() {
+        // Mixed FUs is fine.
+        let result = pipeline("r0 -> ALU_ADD_T; r1 -> LSU_LD_T; r2 -> MUL_T\n");
+        assert!(result.is_ok());
     }
 }
