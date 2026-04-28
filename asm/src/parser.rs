@@ -154,3 +154,72 @@ mod lookup_tests {
         assert_eq!(destination_from_name("DISCARD"),   Some(Destination::Discard));
     }
 }
+
+use crate::diag::Diagnostics;
+use crate::lexer::{Token, TokenKind};
+
+pub fn parse(tokens: Vec<Token>) -> Result<Vec<Line>, Diagnostics> {
+    let mut p = Parser::new(tokens);
+    p.parse_program();
+    if p.diags.has_errors() { Err(p.diags) } else { Ok(p.lines) }
+}
+
+struct Parser {
+    tokens: Vec<Token>,
+    pos: usize,
+    lines: Vec<Line>,
+    diags: Diagnostics,
+}
+
+impl Parser {
+    fn new(tokens: Vec<Token>) -> Self {
+        Self { tokens, pos: 0, lines: Vec::new(), diags: Diagnostics::new() }
+    }
+
+    fn peek(&self) -> &TokenKind { &self.tokens[self.pos].kind }
+    fn peek_span(&self) -> Span { self.tokens[self.pos].span.clone() }
+    fn bump(&mut self) -> &Token {
+        let t = &self.tokens[self.pos];
+        if self.pos + 1 < self.tokens.len() { self.pos += 1; }
+        t
+    }
+    fn eat(&mut self, kind: &TokenKind) -> bool {
+        if std::mem::discriminant(self.peek()) == std::mem::discriminant(kind) {
+            self.bump();
+            true
+        } else { false }
+    }
+
+    fn parse_program(&mut self) {
+        while !matches!(self.peek(), TokenKind::Eof) {
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.bump();
+                self.lines.push(Line::Empty);
+                continue;
+            }
+            // Other line kinds wired up in subsequent tasks.
+            // For now, skip unknown tokens by advancing.
+            self.bump();
+        }
+    }
+}
+
+#[cfg(test)]
+mod parse_skeleton_tests {
+    use super::*;
+    use crate::lexer::lex;
+
+    #[test]
+    fn empty_input() {
+        let toks = lex("", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn empty_lines() {
+        let toks = lex("\n\n\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        assert_eq!(lines, vec![Line::Empty, Line::Empty, Line::Empty]);
+    }
+}
