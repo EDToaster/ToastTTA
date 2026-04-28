@@ -526,4 +526,11 @@ mod parse_skeleton_tests {
         assert_eq!(l.0, "loop");
         assert_eq!(l.1.slots.len(), 1);
     }
+
+    #[test]
+    fn recovers_after_bad_line() {
+        let toks = crate::lexer::lex("r0 ->\n#42 -> r0\n", "x.tasm").unwrap();
+        let result = parse(toks);
+        assert!(result.is_err());
+    }
 }
