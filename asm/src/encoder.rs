@@ -82,6 +82,7 @@ impl Encoder {
     }
 
     fn encode_cycle(&mut self, cycle: CycleSpec) {
+        self.validate_cycle(&cycle);
         let addr = self.iwords.len() as u16;
         let mut slots = [Slot::nop(); 4];
         if cycle.slots.len() > 4 {
@@ -92,6 +93,18 @@ impl Encoder {
             slots[i] = self.encode_slot(addr, i, spec);
         }
         self.iwords.push(IWord::new(slots[0], slots[1], slots[2], slots[3]));
+    }
+
+    fn validate_cycle(&mut self, cycle: &CycleSpec) {
+        // V1: detect multiple writes to the same destination.
+        let mut seen: Vec<&Destination> = Vec::new();
+        for slot in &cycle.slots {
+            if seen.iter().any(|d| **d == slot.dst) {
+                self.diags.error(slot.span.clone(),
+                    format!("multiple writes to the same destination in this cycle"));
+            }
+            seen.push(&slot.dst);
+        }
     }
 
     fn encode_slot(&mut self, addr: u16, idx: usize, spec: &SlotSpec) -> Slot {
@@ -240,5 +253,11 @@ mod tests {
         let src = ".equ ANS 42\n#ANS -> r0\n";
         let words = pipeline(src).unwrap();
         assert_eq!(words[0].slots[0].src_data, 42);
+    }
+
+    #[test]
+    fn rejects_duplicate_destination() {
+        let result = pipeline("r0 -> r3; r1 -> r3\n");
+        assert!(result.is_err());
     }
 }
