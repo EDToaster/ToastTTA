@@ -1,0 +1,48 @@
+// Golden fixture: byte-identical to emu/examples/sample_prog.rs
+//
+// Prints "ToastTTA v1.0\n", computes 1+2+...+10 in a predicated loop,
+// prints the result (55) and a newline, then halts with exit code = 55.
+
+.equ STDOUT_CHAR 0xFF00
+.equ STDOUT_INT  0xFF01
+.equ HALT        0xFFFE
+
+main:
+  // banner: "ToastTTA v1.0\n" — 14 chars
+  #STDOUT_CHAR -> LSU_ST_A; #'T'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'o'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'a'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'s'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'t'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'T'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'T'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'A'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #' '  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'v'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'1'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'.'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'0'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'\n' -> LSU_ST_T
+
+  // word 14: init r0 = 0 (sum), r1 = 1 (i), r2 = 10 (N)
+  #0 -> r0; #1 -> r1; #10 -> r2
+
+loop:
+  // word 15: trigger compare i <= N
+  r1 -> ALU_A; r2 -> ALU_LE_T
+  // word 16: capture predicate
+  ALU_P -> p0
+  // word 17: [!p0] jump PRINT;  in parallel: trigger sum + i
+  [!p0] #print -> GCU_JMP_T; r0 -> ALU_A; r1 -> ALU_ADD_T
+  // word 18: capture sum into r0;  trigger i + 1
+  ALU_R -> r0; r1 -> ALU_A; #1 -> ALU_ADD_T
+  // word 19: capture i into r1;  jump back to LOOP
+  ALU_R -> r1; #loop -> GCU_JMP_T
+
+print:
+  // word 20: print r0 as decimal int
+  #STDOUT_INT  -> LSU_ST_A; r0 -> LSU_ST_T
+  // word 21: print newline
+  #STDOUT_CHAR -> LSU_ST_A; #'\n' -> LSU_ST_T
+  // word 22: halt with exit code = r0
+  #HALT        -> LSU_ST_A; r0 -> LSU_ST_T
