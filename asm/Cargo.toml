@@ -1,0 +1,16 @@
+[package]
+name = "toasttta-asm"
+version = "0.1.0"
+edition = "2021"
+description = "Assembler for the ToastTTA transport-triggered architecture"
+
+[lib]
+name = "toasttta_asm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "toasttta-asm"
+path = "src/main.rs"
+
+[dependencies]
+toasttta = { package = "toasttta-emu", path = "../emu" }
