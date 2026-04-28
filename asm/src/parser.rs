@@ -293,14 +293,25 @@ impl Parser {
     }
 
     fn parse_immediate(&mut self) -> Option<Source> {
-        // Stub for next task — for now only literal numbers.
         match self.peek().clone() {
             TokenKind::Number(n) => {
+                if !(n >= -32768 && n <= 65535) {
+                    self.diags.error(self.peek_span(),
+                        format!("immediate {n} out of 16-bit range"));
+                }
                 self.bump();
                 Some(Source::Imm(ImmExpr::Literal((n as i32 & 0xFFFF) as u16)))
             }
+            TokenKind::Char(c) => {
+                self.bump();
+                Some(Source::Imm(ImmExpr::Literal(c)))
+            }
+            TokenKind::Ident(s) => {
+                self.bump();
+                Some(Source::Imm(ImmExpr::Symbol(s)))
+            }
             _ => {
-                self.diags.error(self.peek_span(), "expected literal after #");
+                self.diags.error(self.peek_span(), "expected literal or identifier after #");
                 None
             }
         }
@@ -424,5 +435,35 @@ mod parse_skeleton_tests {
         let c1 = match &lines[1] { Line::Cycle(c) => c, _ => panic!() };
         assert_eq!(c0.slots[0].guard, Guard::IfP0);
         assert_eq!(c1.slots[0].guard, Guard::IfNotP0);
+    }
+
+    #[test]
+    fn parses_immediate_char() {
+        let toks = crate::lexer::lex("#'A' -> r0\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let c = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(c.slots[0].src, Source::Imm(ImmExpr::Literal(b'A' as u16)));
+    }
+
+    #[test]
+    fn parses_immediate_symbol() {
+        let toks = crate::lexer::lex("#loop -> r0\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let c = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(c.slots[0].src, Source::Imm(ImmExpr::Symbol("loop".into())));
+    }
+
+    #[test]
+    fn parses_immediate_negative() {
+        let toks = crate::lexer::lex("#-1 -> r0\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let c = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(c.slots[0].src, Source::Imm(ImmExpr::Literal(0xFFFF))); // two's complement -1
+    }
+
+    #[test]
+    fn rejects_oversized_immediate() {
+        let toks = crate::lexer::lex("#100000 -> r0\n", "x.tasm").unwrap();
+        assert!(parse(toks).is_err());
     }
 }
