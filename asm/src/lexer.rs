@@ -135,6 +135,43 @@ impl<'src> Lexer<'src> {
         Token { kind: TokenKind::Number(value), span }
     }
 
+    fn lex_char(&mut self) {
+        let start = self.pos;
+        self.bump(); // opening '
+        let val = match self.peek() {
+            Some(b'\\') => {
+                self.bump();
+                match self.bump() {
+                    Some(b'n')  => b'\n',
+                    Some(b't')  => b'\t',
+                    Some(b'r')  => b'\r',
+                    Some(b'\\') => b'\\',
+                    Some(b'\'') => b'\'',
+                    Some(b'0')  => 0,
+                    other => {
+                        let span = self.span(start, (self.pos - start) as u32);
+                        self.diags.error(span, format!("unknown escape \\{:?}", other));
+                        0
+                    }
+                }
+            }
+            Some(c) => { self.bump(); c }
+            None => {
+                let span = self.span(start, 1);
+                self.diags.error(span, "unterminated char literal");
+                0
+            }
+        };
+        if self.peek() == Some(b'\'') {
+            self.bump();
+        } else {
+            let span = self.span(self.pos, 1);
+            self.diags.error(span, "expected closing ' for char literal");
+        }
+        let span = self.span(start, (self.pos - start) as u32);
+        self.tokens.push(Token { kind: TokenKind::Char(val as u16), span });
+    }
+
     fn run(&mut self) {
         while let Some(c) = self.peek() {
             match c {
@@ -175,6 +212,7 @@ impl<'src> Lexer<'src> {
                     let tok = self.lex_number(true);
                     self.tokens.push(tok);
                 }
+                b'\'' => self.lex_char(),
                 _ => {
                     let span = self.span(self.pos, 1);
                     self.diags.error(span, format!("unexpected character {:?}", c as char));
@@ -232,5 +270,14 @@ mod whitespace_tests {
             .filter_map(|t| if let TokenKind::Number(n) = t.kind { Some(n) } else { None })
             .collect();
         assert_eq!(nums, vec![42, -42, 0xFF, 0b1010]);
+    }
+
+    #[test]
+    fn char_literals() {
+        let toks = lex("'A' '\\n' '\\t' '\\\\'\n", "x.tasm").unwrap();
+        let chars: Vec<u16> = toks.iter()
+            .filter_map(|t| if let TokenKind::Char(v) = t.kind { Some(v) } else { None })
+            .collect();
+        assert_eq!(chars, vec![b'A' as u16, b'\n' as u16, b'\t' as u16, b'\\' as u16]);
     }
 }
