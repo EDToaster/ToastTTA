@@ -309,4 +309,18 @@ mod tests {
         let result = pipeline("r0 -> ALU_ADD_T; r1 -> LSU_LD_T; r2 -> MUL_T\n");
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn smoke_test_known_cycle() {
+        // r0 -> ALU_A; #42 -> ALU_ADD_T
+        // Hand-encoded equivalent (mirrors what the example programs do):
+        let expected_slot0 = Slot::new(guard::ALWAYS, src::GPR_R0, 0,  dst::ALU_A);
+        let expected_slot1 = Slot::new(guard::ALWAYS, src::IMMEDIATE, 42, dst::ALU_ADD_T);
+
+        let words = pipeline("r0 -> ALU_A; #42 -> ALU_ADD_T\n").unwrap();
+        assert_eq!(words[0].slots[0], expected_slot0);
+        assert_eq!(words[0].slots[1], expected_slot1);
+        assert_eq!(words[0].slots[2].guard, guard::NEVER);
+        assert_eq!(words[0].slots[3].guard, guard::NEVER);
+    }
 }
