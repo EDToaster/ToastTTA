@@ -4,6 +4,8 @@
 
 use toasttta::IWord;
 
+pub mod diag;
+
 /// Top-level assembly entry point. Lex → parse → encode.
 ///
 /// Returns the assembled instruction words on success, or a non-empty list
