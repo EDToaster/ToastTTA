@@ -1,0 +1,15 @@
+[package]
+name = "toasttta-emu"
+version = "0.1.0"
+edition = "2021"
+description = "Emulator for the ToastTTA transport-triggered architecture"
+
+[lib]
+name = "toasttta"
+path = "src/lib.rs"
+
+[[bin]]
+name = "toasttta-emu"
+path = "src/main.rs"
+
+[dependencies]
