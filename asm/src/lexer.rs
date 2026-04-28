@@ -301,4 +301,22 @@ mod whitespace_tests {
         assert_eq!(&kinds[..8],
             &[Hash, Arrow, Semi, Colon, LBracket, RBracket, Bang, Eq]);
     }
+
+    #[test]
+    fn full_cycle_lexes_correctly() {
+        let src = "// init\n.equ STDOUT 0xFF01\nmain: r0 -> ALU_A; #4 -> ALU_ADD_T\n";
+        let toks = lex(src, "x.tasm").unwrap();
+        let kinds: Vec<TokenKind> = toks.iter().map(|t| t.kind.clone()).collect();
+        use TokenKind::*;
+        assert_eq!(kinds, vec![
+            Newline,                                                  // after // comment
+            KwEqu, Ident("STDOUT".into()), Number(0xFF01), Newline,
+            Ident("main".into()), Colon,
+            Ident("r0".into()), Arrow, Ident("ALU_A".into()),
+            Semi,
+            Hash, Number(4), Arrow, Ident("ALU_ADD_T".into()),
+            Newline,
+            Eof,
+        ]);
+    }
 }
