@@ -466,4 +466,20 @@ mod parse_skeleton_tests {
         let toks = crate::lexer::lex("#100000 -> r0\n", "x.tasm").unwrap();
         assert!(parse(toks).is_err());
     }
+
+    #[test]
+    fn parses_multi_slot_cycle() {
+        let toks = crate::lexer::lex("r0 -> r3; r1 -> r4; r2 -> r5\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let c = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(c.slots.len(), 3);
+    }
+
+    #[test]
+    fn allows_trailing_semicolon() {
+        let toks = crate::lexer::lex("r0 -> r3;\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let c = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(c.slots.len(), 1);
+    }
 }
