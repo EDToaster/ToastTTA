@@ -1,0 +1,5 @@
+# Cargo build artifacts
+target/
+
+# Generated program binaries (rebuild with `cargo run --example <name>`)
+*.bin
