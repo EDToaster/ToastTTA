@@ -94,6 +94,16 @@ impl<'src> Lexer<'src> {
         Some(c)
     }
 
+    fn lex_ident(&mut self) -> (String, Span) {
+        let start = self.pos;
+        while let Some(c) = self.peek() {
+            if c.is_ascii_alphanumeric() || c == b'_' { self.bump(); } else { break; }
+        }
+        let s = std::str::from_utf8(&self.src[start..self.pos]).unwrap().to_string();
+        let span = self.span(start, (self.pos - start) as u32);
+        (s, span)
+    }
+
     fn run(&mut self) {
         while let Some(c) = self.peek() {
             match c {
@@ -108,6 +118,22 @@ impl<'src> Lexer<'src> {
                         if c == b'\n' { break; }
                         self.bump();
                     }
+                }
+                b'.' => {
+                    // Only legal start of `.equ`; anything else is an error.
+                    let start = self.pos;
+                    self.bump(); // consume '.'
+                    let (kw, _) = self.lex_ident();
+                    let span = self.span(start, (self.pos - start) as u32);
+                    if kw == "equ" {
+                        self.tokens.push(Token { kind: TokenKind::KwEqu, span });
+                    } else {
+                        self.diags.error(span, format!("unknown directive .{kw}"));
+                    }
+                }
+                c if c.is_ascii_alphabetic() || c == b'_' => {
+                    let (s, span) = self.lex_ident();
+                    self.tokens.push(Token { kind: TokenKind::Ident(s), span });
                 }
                 _ => {
                     let span = self.span(self.pos, 1);
@@ -146,5 +172,16 @@ mod whitespace_tests {
         let toks = lex("// hello world\n  // another\n", "x.tasm").unwrap();
         assert_eq!(toks.len(), 3); // two newlines + EOF
         assert!(matches!(toks[0].kind, TokenKind::Newline));
+    }
+
+    #[test]
+    fn idents_and_equ() {
+        let toks = lex("r0 ALU_R foo_bar .equ FOO\n", "x.tasm").unwrap();
+        let kinds: Vec<_> = toks.iter().map(|t| &t.kind).collect();
+        assert!(matches!(kinds[0], TokenKind::Ident(s) if s == "r0"));
+        assert!(matches!(kinds[1], TokenKind::Ident(s) if s == "ALU_R"));
+        assert!(matches!(kinds[2], TokenKind::Ident(s) if s == "foo_bar"));
+        assert!(matches!(kinds[3], TokenKind::KwEqu));
+        assert!(matches!(kinds[4], TokenKind::Ident(s) if s == "FOO"));
     }
 }
