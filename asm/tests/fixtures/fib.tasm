@@ -1,0 +1,46 @@
+// Golden fixture: byte-identical to emu/examples/fib.rs
+//
+// Prints "Fibonacci:\n" then the first 10 Fibonacci numbers
+// (1 1 2 3 5 8 13 21 34 55), one per line.
+//
+// Register map:
+//   r0 = a (previous), r1 = b (current), r2 = counter (10..0)
+
+.equ STDOUT_CHAR 0xFF00
+.equ STDOUT_INT  0xFF01
+.equ HALT        0xFFFE
+
+main:
+  // banner: "Fibonacci:\n" — 11 chars
+  #STDOUT_CHAR -> LSU_ST_A; #'F'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'i'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'b'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'o'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'n'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'a'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'c'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'c'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'i'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #':'  -> LSU_ST_T
+  #STDOUT_CHAR -> LSU_ST_A; #'\n' -> LSU_ST_T
+
+  // word 11: init r0=0 (a), r1=1 (b), r2=10 (counter)
+  #0 -> r0; #1 -> r1; #10 -> r2
+
+loop:
+  // word 12: trigger compare counter != 0; preset LSU.ST_A for int output
+  r2 -> ALU_A; #0 -> ALU_NE_T; #STDOUT_INT -> LSU_ST_A
+  // word 13: capture predicate
+  ALU_P -> p0
+  // word 14: [!p0] jump END;  [p0] print b;  start a + b
+  [!p0] #end -> GCU_JMP_T; [p0] r1 -> LSU_ST_T; r0 -> ALU_A; r1 -> ALU_ADD_T
+  // word 15: print '\n';  capture sum into r1 (b ← a+b);  copy old r1 into r0 (a ← b)
+  #STDOUT_CHAR -> LSU_ST_A; #'\n' -> LSU_ST_T; ALU_R -> r1; r1 -> r0
+  // word 16: trigger counter += -1
+  r2 -> ALU_A; #0xFFFF -> ALU_ADD_T
+  // word 17: capture decremented counter; jump LOOP
+  ALU_R -> r2; #loop -> GCU_JMP_T
+
+end:
+  // word 18: halt with exit code 0
+  #HALT -> LSU_ST_A; #0 -> LSU_ST_T
