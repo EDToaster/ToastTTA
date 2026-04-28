@@ -195,7 +195,113 @@ impl Parser {
             match self.peek().clone() {
                 TokenKind::KwEqu => self.parse_equ(),
                 TokenKind::Newline => { self.bump(); self.lines.push(Line::Empty); }
-                _ => { self.bump(); /* will be handled by later tasks */ }
+                _ => self.parse_cycle_line(),
+            }
+        }
+    }
+
+    fn parse_cycle_line(&mut self) {
+        let start = self.peek_span();
+        let mut slots = Vec::new();
+        if let Some(s) = self.parse_slot() { slots.push(s); }
+        while matches!(self.peek(), TokenKind::Semi) {
+            self.bump();
+            if matches!(self.peek(), TokenKind::Newline | TokenKind::Eof) { break; }
+            if let Some(s) = self.parse_slot() { slots.push(s); }
+        }
+        self.expect_newline_or_eof();
+        if !slots.is_empty() {
+            self.lines.push(Line::Cycle(CycleSpec { slots, span: start }));
+        }
+    }
+
+    /// Parse one slot. Returns None and emits a diagnostic on failure.
+    fn parse_slot(&mut self) -> Option<SlotSpec> {
+        let start_span = self.peek_span();
+
+        let guard = self.parse_guard()?;
+
+        let src = self.parse_source()?;
+
+        if !self.eat(&TokenKind::Arrow) {
+            self.diags.error(self.peek_span(), "expected '->'");
+            return None;
+        }
+
+        let dst = self.parse_destination()?;
+
+        Some(SlotSpec { guard, src, dst, span: start_span })
+    }
+
+    fn parse_guard(&mut self) -> Option<Guard> {
+        if !matches!(self.peek(), TokenKind::LBracket) {
+            return Some(Guard::Always);
+        }
+        self.bump(); // [
+        let inverted = self.eat(&TokenKind::Bang);
+        let pname = if let TokenKind::Ident(s) = self.peek().clone() {
+            self.bump(); s
+        } else {
+            self.diags.error(self.peek_span(), "expected predicate name in guard");
+            return None;
+        };
+        if pname.to_ascii_lowercase() != "p0" {
+            self.diags.error(self.peek_span(), format!("unknown predicate {pname}"));
+            return None;
+        }
+        if !self.eat(&TokenKind::RBracket) {
+            self.diags.error(self.peek_span(), "expected ']'");
+            return None;
+        }
+        Some(if inverted { Guard::IfNotP0 } else { Guard::IfP0 })
+    }
+
+    fn parse_source(&mut self) -> Option<Source> {
+        if matches!(self.peek(), TokenKind::Hash) {
+            self.bump();
+            return self.parse_immediate();
+        }
+        let name = if let TokenKind::Ident(s) = self.peek().clone() {
+            self.bump(); s
+        } else {
+            self.diags.error(self.peek_span(), "expected source identifier or #immediate");
+            return None;
+        };
+        match source_from_name(&name) {
+            Some(s) => Some(s),
+            None => {
+                self.diags.error(self.peek_span(), format!("unknown source {name}"));
+                None
+            }
+        }
+    }
+
+    fn parse_destination(&mut self) -> Option<Destination> {
+        let name = if let TokenKind::Ident(s) = self.peek().clone() {
+            self.bump(); s
+        } else {
+            self.diags.error(self.peek_span(), "expected destination identifier");
+            return None;
+        };
+        match destination_from_name(&name) {
+            Some(d) => Some(d),
+            None => {
+                self.diags.error(self.peek_span(), format!("unknown destination {name}"));
+                None
+            }
+        }
+    }
+
+    fn parse_immediate(&mut self) -> Option<Source> {
+        // Stub for next task — for now only literal numbers.
+        match self.peek().clone() {
+            TokenKind::Number(n) => {
+                self.bump();
+                Some(Source::Imm(ImmExpr::Literal((n as i32 & 0xFFFF) as u16)))
+            }
+            _ => {
+                self.diags.error(self.peek_span(), "expected literal after #");
+                None
             }
         }
     }
@@ -286,5 +392,24 @@ mod parse_skeleton_tests {
         let toks = crate::lexer::lex(".equ X 100000\n", "x.tasm").unwrap();
         let result = parse(toks);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_simple_slot() {
+        let toks = crate::lexer::lex("r0 -> r3\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let cycle = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(cycle.slots.len(), 1);
+        assert_eq!(cycle.slots[0].guard, Guard::Always);
+        assert_eq!(cycle.slots[0].src, Source::Gpr(0));
+        assert_eq!(cycle.slots[0].dst, Destination::Gpr(3));
+    }
+
+    #[test]
+    fn parses_immediate_literal() {
+        let toks = crate::lexer::lex("#42 -> r0\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let cycle = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(cycle.slots[0].src, Source::Imm(ImmExpr::Literal(42)));
     }
 }
