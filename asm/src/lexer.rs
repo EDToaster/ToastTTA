@@ -104,6 +104,37 @@ impl<'src> Lexer<'src> {
         (s, span)
     }
 
+    fn lex_number(&mut self, signed_negative: bool) -> Token {
+        let start = if signed_negative { self.pos - 1 } else { self.pos };
+
+        let mut radix: u32 = 10;
+        if self.peek() == Some(b'0') {
+            match self.src.get(self.pos + 1) {
+                Some(b'x') | Some(b'X') => { self.bump(); self.bump(); radix = 16; }
+                Some(b'b') | Some(b'B') => { self.bump(); self.bump(); radix = 2; }
+                _ => {}
+            }
+        }
+
+        let digits_start = self.pos;
+        while let Some(c) = self.peek() {
+            let ok = match radix {
+                10 => c.is_ascii_digit(),
+                16 => c.is_ascii_hexdigit(),
+                2  => c == b'0' || c == b'1',
+                _  => false,
+            };
+            if !ok { break; }
+            self.bump();
+        }
+
+        let body = std::str::from_utf8(&self.src[digits_start..self.pos]).unwrap();
+        let value = i64::from_str_radix(body, radix).unwrap_or(0);
+        let value = if signed_negative { -value } else { value };
+        let span = self.span(start, (self.pos - start) as u32);
+        Token { kind: TokenKind::Number(value), span }
+    }
+
     fn run(&mut self) {
         while let Some(c) = self.peek() {
             match c {
@@ -134,6 +165,15 @@ impl<'src> Lexer<'src> {
                 c if c.is_ascii_alphabetic() || c == b'_' => {
                     let (s, span) = self.lex_ident();
                     self.tokens.push(Token { kind: TokenKind::Ident(s), span });
+                }
+                b'0'..=b'9' => {
+                    let tok = self.lex_number(false);
+                    self.tokens.push(tok);
+                }
+                b'-' => {
+                    self.bump();
+                    let tok = self.lex_number(true);
+                    self.tokens.push(tok);
                 }
                 _ => {
                     let span = self.span(self.pos, 1);
@@ -183,5 +223,14 @@ mod whitespace_tests {
         assert!(matches!(kinds[2], TokenKind::Ident(s) if s == "foo_bar"));
         assert!(matches!(kinds[3], TokenKind::KwEqu));
         assert!(matches!(kinds[4], TokenKind::Ident(s) if s == "FOO"));
+    }
+
+    #[test]
+    fn numbers_all_radices() {
+        let toks = lex("42 -42 0xFF 0b1010\n", "x.tasm").unwrap();
+        let nums: Vec<i64> = toks.iter()
+            .filter_map(|t| if let TokenKind::Number(n) = t.kind { Some(n) } else { None })
+            .collect();
+        assert_eq!(nums, vec![42, -42, 0xFF, 0b1010]);
     }
 }
