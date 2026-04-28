@@ -6,21 +6,24 @@
 //! MMIO. If the assembled `.tasm` produces the same 736 bytes as the hand-coded
 //! Rust example, the entire assembler stack is correct.
 
+use std::path::Path;
 use std::process::Command;
 use toasttta_asm::assemble;
 
 #[test]
 fn mandelbrot_byte_identical() {
+    // Run the example from the workspace root so its `.bin` lands where this
+    // test reads it from. Matches the cwd a developer would use when running
+    // `cargo run --example mandelbrot` by hand.
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+
     let status = Command::new("cargo")
         .args(&["run", "--quiet", "--example", "mandelbrot", "-p", "toasttta-emu"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(workspace_root)
         .status()
         .expect("failed to run example");
     assert!(status.success(), "example program failed");
 
-    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
     let reference = std::fs::read(workspace_root.join("mandelbrot.bin"))
         .expect("reference mandelbrot.bin not found");
 
