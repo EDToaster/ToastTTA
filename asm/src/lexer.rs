@@ -207,12 +207,24 @@ impl<'src> Lexer<'src> {
                     let tok = self.lex_number(false);
                     self.tokens.push(tok);
                 }
+                b'-' if self.src.get(self.pos + 1) == Some(&b'>') => {
+                    let span = self.span(self.pos, 2);
+                    self.bump(); self.bump();
+                    self.tokens.push(Token { kind: TokenKind::Arrow, span });
+                }
                 b'-' => {
                     self.bump();
                     let tok = self.lex_number(true);
                     self.tokens.push(tok);
                 }
                 b'\'' => self.lex_char(),
+                b'#' => { let span = self.span(self.pos, 1); self.bump(); self.tokens.push(Token { kind: TokenKind::Hash, span }); }
+                b';' => { let span = self.span(self.pos, 1); self.bump(); self.tokens.push(Token { kind: TokenKind::Semi, span }); }
+                b':' => { let span = self.span(self.pos, 1); self.bump(); self.tokens.push(Token { kind: TokenKind::Colon, span }); }
+                b'[' => { let span = self.span(self.pos, 1); self.bump(); self.tokens.push(Token { kind: TokenKind::LBracket, span }); }
+                b']' => { let span = self.span(self.pos, 1); self.bump(); self.tokens.push(Token { kind: TokenKind::RBracket, span }); }
+                b'!' => { let span = self.span(self.pos, 1); self.bump(); self.tokens.push(Token { kind: TokenKind::Bang, span }); }
+                b'=' => { let span = self.span(self.pos, 1); self.bump(); self.tokens.push(Token { kind: TokenKind::Eq, span }); }
                 _ => {
                     let span = self.span(self.pos, 1);
                     self.diags.error(span, format!("unexpected character {:?}", c as char));
@@ -279,5 +291,14 @@ mod whitespace_tests {
             .filter_map(|t| if let TokenKind::Char(v) = t.kind { Some(v) } else { None })
             .collect();
         assert_eq!(chars, vec![b'A' as u16, b'\n' as u16, b'\t' as u16, b'\\' as u16]);
+    }
+
+    #[test]
+    fn punctuation() {
+        let toks = lex("# -> ; : [ ] ! =\n", "x.tasm").unwrap();
+        let kinds: Vec<TokenKind> = toks.iter().map(|t| t.kind.clone()).collect();
+        use TokenKind::*;
+        assert_eq!(&kinds[..8],
+            &[Hash, Arrow, Semi, Colon, LBracket, RBracket, Bang, Eq]);
     }
 }
