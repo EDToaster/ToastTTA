@@ -129,9 +129,32 @@ impl<'src> Lexer<'src> {
         }
 
         let body = std::str::from_utf8(&self.src[digits_start..self.pos]).unwrap();
-        let value = i64::from_str_radix(body, radix).unwrap_or(0);
-        let value = if signed_negative { -value } else { value };
         let span = self.span(start, (self.pos - start) as u32);
+        let value = if body.is_empty() {
+            // No digits after the prefix (`0x`, `0b`, or — defensively — the
+            // base-10 path). Previously `from_str_radix("", _)` returned Err
+            // and `unwrap_or(0)` silently produced 0.
+            let msg = match radix {
+                16 => "expected hex digits after `0x`",
+                2  => "expected binary digits after `0b`",
+                _  => "expected number",
+            };
+            self.diags.error(span.clone(), msg);
+            0
+        } else {
+            match i64::from_str_radix(body, radix) {
+                Ok(v) => v,
+                Err(_) => {
+                    // Non-empty but unparseable (e.g. integer overflow).
+                    self.diags.error(
+                        span.clone(),
+                        format!("invalid base-{radix} integer literal"),
+                    );
+                    0
+                }
+            }
+        };
+        let value = if signed_negative { -value } else { value };
         Token { kind: TokenKind::Number(value), span }
     }
 
@@ -316,6 +339,18 @@ mod whitespace_tests {
     #[test]
     fn char_literal_with_raw_newline_diagnoses() {
         let result = lex("'\n' -> r0\n", "x.tasm");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn hex_prefix_without_digits_diagnoses() {
+        let result = lex("#0x -> r0\n", "x.tasm");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn binary_prefix_without_digits_diagnoses() {
+        let result = lex("#0b -> r0\n", "x.tasm");
         assert!(result.is_err());
     }
 
