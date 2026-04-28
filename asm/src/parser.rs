@@ -193,11 +193,39 @@ impl Parser {
     fn parse_program(&mut self) {
         while !matches!(self.peek(), TokenKind::Eof) {
             match self.peek().clone() {
-                TokenKind::KwEqu => self.parse_equ(),
                 TokenKind::Newline => { self.bump(); self.lines.push(Line::Empty); }
+                TokenKind::KwEqu   => self.parse_equ(),
+                TokenKind::Ident(name) if self.tokens.get(self.pos + 1).map(|t| &t.kind)
+                                          == Some(&TokenKind::Colon) => {
+                    self.parse_label(name);
+                }
                 _ => self.parse_cycle_line(),
             }
         }
+    }
+
+    fn parse_label(&mut self, name: String) {
+        let span = self.peek_span();
+        self.bump(); // ident
+        self.bump(); // ':'
+        // attached cycle on same line?
+        let attached = if matches!(self.peek(), TokenKind::Newline | TokenKind::Eof) {
+            self.expect_newline_or_eof();
+            None
+        } else {
+            // parse a cycle inline
+            let start = self.peek_span();
+            let mut slots = Vec::new();
+            if let Some(s) = self.parse_slot() { slots.push(s); }
+            while matches!(self.peek(), TokenKind::Semi) {
+                self.bump();
+                if matches!(self.peek(), TokenKind::Newline | TokenKind::Eof) { break; }
+                if let Some(s) = self.parse_slot() { slots.push(s); }
+            }
+            self.expect_newline_or_eof();
+            Some(CycleSpec { slots, span: start })
+        };
+        self.lines.push(Line::Label { name, span, attached });
     }
 
     fn parse_cycle_line(&mut self) {
@@ -481,5 +509,21 @@ mod parse_skeleton_tests {
         let lines = parse(toks).unwrap();
         let c = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
         assert_eq!(c.slots.len(), 1);
+    }
+
+    #[test]
+    fn parses_standalone_label() {
+        let toks = crate::lexer::lex("loop:\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        assert!(matches!(&lines[0], Line::Label { name, attached: None, .. } if name == "loop"));
+    }
+
+    #[test]
+    fn parses_label_with_attached_cycle() {
+        let toks = crate::lexer::lex("loop: r0 -> r3\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        let l = match &lines[0] { Line::Label { name, attached: Some(c), .. } => (name, c), _ => panic!() };
+        assert_eq!(l.0, "loop");
+        assert_eq!(l.1.slots.len(), 1);
     }
 }
