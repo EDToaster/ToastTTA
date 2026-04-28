@@ -412,4 +412,17 @@ mod parse_skeleton_tests {
         let cycle = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
         assert_eq!(cycle.slots[0].src, Source::Imm(ImmExpr::Literal(42)));
     }
+
+    #[test]
+    fn parses_guards() {
+        let toks = crate::lexer::lex(
+            "[p0] r0 -> r3\n[!p0] r1 -> r4\n",
+            "x.tasm",
+        ).unwrap();
+        let lines = parse(toks).unwrap();
+        let c0 = match &lines[0] { Line::Cycle(c) => c, _ => panic!() };
+        let c1 = match &lines[1] { Line::Cycle(c) => c, _ => panic!() };
+        assert_eq!(c0.slots[0].guard, Guard::IfP0);
+        assert_eq!(c1.slots[0].guard, Guard::IfNotP0);
+    }
 }
