@@ -103,6 +103,12 @@ impl<'src> Lexer<'src> {
                     self.bump();
                     self.tokens.push(Token { kind: TokenKind::Newline, span });
                 }
+                b'/' if self.src.get(self.pos + 1) == Some(&b'/') => {
+                    while let Some(c) = self.peek() {
+                        if c == b'\n' { break; }
+                        self.bump();
+                    }
+                }
                 _ => {
                     let span = self.span(self.pos, 1);
                     self.diags.error(span, format!("unexpected character {:?}", c as char));
@@ -133,5 +139,12 @@ mod whitespace_tests {
     fn unknown_char_diagnoses_but_continues() {
         let result = lex("@\n", "x.tasm");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn line_comments_skipped() {
+        let toks = lex("// hello world\n  // another\n", "x.tasm").unwrap();
+        assert_eq!(toks.len(), 3); // two newlines + EOF
+        assert!(matches!(toks[0].kind, TokenKind::Newline));
     }
 }
