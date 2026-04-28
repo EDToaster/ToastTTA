@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use toasttta_asm::{assemble, diag::{Diagnostics, Severity}};
+use toasttta_asm::{assemble, diag::Diagnostics};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -38,16 +38,12 @@ fn main() {
             eprintln!("wrote {} instruction words to {}", words.len(), output.display());
         }
         Err(diags) => {
-            print_diags(&diags);
+            print_diags(&diags, &source);
             process::exit(1);
         }
     }
 }
 
-fn print_diags(d: &Diagnostics) {
-    for diag in &d.items {
-        let sev = match diag.severity { Severity::Error => "error", Severity::Warning => "warning" };
-        eprintln!("{}: {}", sev, diag.message);
-        eprintln!("  --> {}:{}:{}", diag.span.file, diag.span.line, diag.span.col);
-    }
+fn print_diags(d: &Diagnostics, source: &str) {
+    eprint!("{}", d.render(source));
 }
