@@ -192,14 +192,63 @@ impl Parser {
 
     fn parse_program(&mut self) {
         while !matches!(self.peek(), TokenKind::Eof) {
-            if matches!(self.peek(), TokenKind::Newline) {
-                self.bump();
-                self.lines.push(Line::Empty);
-                continue;
+            match self.peek().clone() {
+                TokenKind::KwEqu => self.parse_equ(),
+                TokenKind::Newline => { self.bump(); self.lines.push(Line::Empty); }
+                _ => { self.bump(); /* will be handled by later tasks */ }
             }
-            // Other line kinds wired up in subsequent tasks.
-            // For now, skip unknown tokens by advancing.
+        }
+    }
+
+    fn parse_equ(&mut self) {
+        let kw_span = self.peek_span();
+        self.bump(); // .equ
+
+        let name = if let TokenKind::Ident(s) = self.peek().clone() {
+            self.bump(); s
+        } else {
+            self.diags.error(self.peek_span(), "expected identifier after .equ");
+            self.skip_to_newline();
+            return;
+        };
+
+        let value = match self.peek().clone() {
+            TokenKind::Number(n) => { self.bump(); n as i64 }
+            TokenKind::Char(c)   => { self.bump(); c as i64 }
+            _ => {
+                self.diags.error(self.peek_span(), "expected literal value after .equ name");
+                self.skip_to_newline();
+                return;
+            }
+        };
+
+        if !(value >= -32768 && value <= 65535) {
+            self.diags.error(self.peek_span(), format!(".equ value {value} out of 16-bit range"));
+        }
+
+        self.expect_newline_or_eof();
+        self.lines.push(Line::Equ {
+            name,
+            value: (value as i32 & 0xFFFF) as u16,
+            span: kw_span,
+        });
+    }
+
+    fn skip_to_newline(&mut self) {
+        while !matches!(self.peek(), TokenKind::Newline | TokenKind::Eof) {
             self.bump();
+        }
+        if matches!(self.peek(), TokenKind::Newline) { self.bump(); }
+    }
+
+    fn expect_newline_or_eof(&mut self) {
+        match self.peek() {
+            TokenKind::Newline => { self.bump(); }
+            TokenKind::Eof => {}
+            _ => {
+                self.diags.error(self.peek_span(), "expected newline");
+                self.skip_to_newline();
+            }
         }
     }
 }
@@ -221,5 +270,21 @@ mod parse_skeleton_tests {
         let toks = lex("\n\n\n", "x.tasm").unwrap();
         let lines = parse(toks).unwrap();
         assert_eq!(lines, vec![Line::Empty, Line::Empty, Line::Empty]);
+    }
+
+    #[test]
+    fn parses_equ() {
+        let toks = crate::lexer::lex(".equ FOO 42\n.equ BAR 0xFF\n", "x.tasm").unwrap();
+        let lines = parse(toks).unwrap();
+        assert_eq!(lines.len(), 2);
+        assert!(matches!(&lines[0], Line::Equ { name, value: 42, .. } if name == "FOO"));
+        assert!(matches!(&lines[1], Line::Equ { name, value: 0xFF, .. } if name == "BAR"));
+    }
+
+    #[test]
+    fn equ_rejects_out_of_range() {
+        let toks = crate::lexer::lex(".equ X 100000\n", "x.tasm").unwrap();
+        let result = parse(toks);
+        assert!(result.is_err());
     }
 }
