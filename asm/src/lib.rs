@@ -6,6 +6,7 @@ use toasttta::IWord;
 
 pub mod diag;
 pub mod lexer;
+pub mod parser;
 
 /// Top-level assembly entry point. Lex → parse → encode.
 ///
