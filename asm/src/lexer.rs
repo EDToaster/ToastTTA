@@ -155,9 +155,20 @@ impl<'src> Lexer<'src> {
                     }
                 }
             }
+            Some(b'\n') => {
+                // A raw newline inside a char literal would be consumed by
+                // bump(), advancing line_start past `start` and causing
+                // subsequent self.span(start, ..) calls to underflow. Emit a
+                // diagnostic without consuming the newline; the outer `b'\n'`
+                // arm will handle it as a normal line terminator.
+                let span = self.span(start, (self.pos - start) as u32);
+                self.diags.error(span.clone(), "newline in char literal");
+                self.tokens.push(Token { kind: TokenKind::Char(0), span });
+                return;
+            }
             Some(c) => { self.bump(); c }
             None => {
-                let span = self.span(start, 1);
+                let span = self.span(start, (self.pos - start) as u32);
                 self.diags.error(span, "unterminated char literal");
                 0
             }
@@ -300,6 +311,12 @@ mod whitespace_tests {
         use TokenKind::*;
         assert_eq!(&kinds[..8],
             &[Hash, Arrow, Semi, Colon, LBracket, RBracket, Bang, Eq]);
+    }
+
+    #[test]
+    fn char_literal_with_raw_newline_diagnoses() {
+        let result = lex("'\n' -> r0\n", "x.tasm");
+        assert!(result.is_err());
     }
 
     #[test]
