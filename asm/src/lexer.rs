@@ -36,3 +36,102 @@ mod tests {
         assert_ne!(TokenKind::Hash, TokenKind::Bang);
     }
 }
+
+pub fn lex(source: &str, filename: &str) -> Result<Vec<Token>, crate::diag::Diagnostics> {
+    let mut lexer = Lexer::new(source, filename);
+    lexer.run();
+    if lexer.diags.has_errors() {
+        Err(lexer.diags)
+    } else {
+        Ok(lexer.tokens)
+    }
+}
+
+struct Lexer<'src> {
+    src: &'src [u8],
+    pos: usize,
+    line: u32,
+    line_start: usize,
+    file: std::sync::Arc<str>,
+    tokens: Vec<Token>,
+    diags: crate::diag::Diagnostics,
+}
+
+impl<'src> Lexer<'src> {
+    fn new(source: &'src str, filename: &str) -> Self {
+        Self {
+            src: source.as_bytes(),
+            pos: 0,
+            line: 1,
+            line_start: 0,
+            file: std::sync::Arc::from(filename),
+            tokens: Vec::new(),
+            diags: crate::diag::Diagnostics::new(),
+        }
+    }
+
+    fn col(&self) -> u32 {
+        (self.pos - self.line_start + 1) as u32
+    }
+
+    fn span(&self, start: usize, len: u32) -> Span {
+        Span {
+            file: self.file.clone(),
+            line: self.line,
+            col: (start - self.line_start + 1) as u32,
+            len,
+        }
+    }
+
+    fn peek(&self) -> Option<u8> { self.src.get(self.pos).copied() }
+    fn bump(&mut self) -> Option<u8> {
+        let c = self.peek()?;
+        self.pos += 1;
+        if c == b'\n' {
+            self.line += 1;
+            self.line_start = self.pos;
+        }
+        Some(c)
+    }
+
+    fn run(&mut self) {
+        while let Some(c) = self.peek() {
+            match c {
+                b' ' | b'\t' | b'\r' => { self.bump(); }
+                b'\n' => {
+                    let span = self.span(self.pos, 1);
+                    self.bump();
+                    self.tokens.push(Token { kind: TokenKind::Newline, span });
+                }
+                _ => {
+                    let span = self.span(self.pos, 1);
+                    self.diags.error(span, format!("unexpected character {:?}", c as char));
+                    self.bump(); // skip and continue
+                }
+            }
+        }
+        let span = self.span(self.pos, 0);
+        self.tokens.push(Token { kind: TokenKind::Eof, span });
+    }
+}
+
+#[cfg(test)]
+mod whitespace_tests {
+    use super::*;
+
+    #[test]
+    fn skip_whitespace_emit_newlines() {
+        let toks = lex("  \n  \n", "x.tasm").unwrap();
+        // Two Newlines + Eof.
+        assert_eq!(toks.len(), 3);
+        assert!(matches!(toks[0].kind, TokenKind::Newline));
+        assert!(matches!(toks[1].kind, TokenKind::Newline));
+        assert!(matches!(toks[2].kind, TokenKind::Eof));
+    }
+
+    #[test]
+    fn unknown_char_diagnoses_but_continues() {
+        let result = lex("@\n", "x.tasm");
+        assert!(result.is_err());
+    }
+}
