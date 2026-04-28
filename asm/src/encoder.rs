@@ -212,4 +212,33 @@ mod tests {
         assert_eq!(s.src_sock, src::IMMEDIATE);
         assert_eq!(s.src_data, 42);
     }
+
+    #[test]
+    fn backward_label_resolves() {
+        let src = "loop:\n#loop -> r0\n";
+        let words = pipeline(src).unwrap();
+        assert_eq!(words.len(), 1); // only the cycle line; label produces no IWord
+        assert_eq!(words[0].slots[0].src_data, 0); // loop is at addr 0
+    }
+
+    #[test]
+    fn forward_label_resolves() {
+        let src = "#end -> r0\nend:\n";
+        let words = pipeline(src).unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].slots[0].src_data, 1); // end is at addr 1 (after the cycle)
+    }
+
+    #[test]
+    fn undefined_symbol_errors() {
+        let result = pipeline("#nope -> r0\n");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn equ_symbol_resolves() {
+        let src = ".equ ANS 42\n#ANS -> r0\n";
+        let words = pipeline(src).unwrap();
+        assert_eq!(words[0].slots[0].src_data, 42);
+    }
 }
